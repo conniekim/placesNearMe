@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1 maximum-scale=1, user-scalable=no">
+
+    <title>Places Near Me</title>
+
+    <style>
+      /* Always set the map height explicitly to define the size of the div
+       * element that contains the map. */
+      #map {
+        height: 100%;
+      }
+      /* Optional: Makes the sample page fill the window. */
+      html, body {
+        height: 100%;
+        /*width: 75%;*/
+        margin: 0;
+        /*padding-left: 1%;*/
+        /*padding-top: 1%;*/
+      }
+      .controls {
+        background-color: #fff;
+        border-radius: 2px;
+        border: 1px solid transparent;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        box-sizing: border-box;
+        font-family: Roboto;
+        font-size: 15px;
+        font-weight: 300;
+        height: 29px;
+        margin-left: 17px;
+        margin-top: 10px;
+        outline: none;
+        padding: 0 11px 0 13px;
+        text-overflow: ellipsis;
+        width: 400px;
+      }
+
+      .controls:focus {
+        border-color: #4d90fe;
+      }
+      .title {
+        font-weight: bold;
+      }
+
+    </style>
+  </head>
+  <body>
+    <input id="city" class="controls" type="text"
+        placeholder="Look for places near me">
+    <div id="map"></div>
+
+    <script>
+
+      var map;
+      var infowindow;
+      var userLocation = {lat: 0, lng: 0};
+      var keyword;
+      var RADIUS = 500;     // in meters
+      var allMarkers = [];
+      var allDistances = [];
+
+      var GEOCODING_API_KEY = "AIzaSyBTDSmhBhZZcAXBtKxltmNTjWRKRqvujcI";
+
+      function initMap() {
+
+         // create a new map
+        map = new google.maps.Map(document.getElementById('map'), {
+          center: {lat: 0, lng: 0},
+          zoom: 2
+        });
+        var input = document.getElementById('city');
+        map.controls[google.maps.ControlPosition.TOP_LEFT].push(input);
+
+ 
+        // if the browser supports GeoLocation
+        if (navigator.geolocation) {
+
+          // Get the current location of the user
+          navigator.geolocation.getCurrentPosition(function(position) {
+
+          // create an object to refer to the center of the map
+          var pos = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          };
+
+
+          // set the map to the center based on user location
+          userLocation = pos;
+          map.setCenter(pos);
+          map.setZoom(13);
+          }, function() {
+
+            // if permission not given
+            handleGeolocationError();
+            });
+        } 
+      
+        // If the browser doesn't support Geolocation
+        else {
+          handleGeolocationError();
+        }
+      }
+
+      function handleGeolocationError() {
+
+        var responseStatus = "";
+
+        while (responseStatus != "OK") {
+
+          alert("ERROR: Could not find your location.");
+          var city = prompt("Please enter the name of your city");
+
+          var request = new XMLHttpRequest();
+          request.open("GET", "https://maps.googleapis.com/maps/api/geocode/json?key=" + GEOCODING_API_KEY + "&address=" + city, false);
+          request.send(null);
+
+
+          var cityData = JSON.parse(request.responseText);
+          responseStatus = cityData.status;
+
+        }
+
+        var coordinates = cityData.results[0].geometry.location;
+        userLocation = coordinates;
+        map.setCenter(coordinates);
+        map.setZoom(15);
+      }
+
+      var inputBox = document.getElementById("city");
+      inputBox.addEventListener('keyup', function(event) {
+        keyword = inputBox.value;
+        if (event.keyCode == 13)
+          getNearbyPlaces(event);
+      });
+
+
+      function getNearbyPlaces(event) {
+
+          var request = {
+            location: userLocation,
+            radius: RADIUS,
+            query: keyword
+          };
+
+          service = new google.maps.places.PlacesService(map);
+          service.textSearch(request, callback);
+      }
+
+      function callback(results, status) {
+
+        infowindow = new google.maps.InfoWindow();
+        
+        if (status == google.maps.places.PlacesServiceStatus.OK) {
+
+          removeExistingMarkers();
+
+          for (var i = 0; i < results.length; i++) {
+
+            // var place = results[i]
+            
+            var located = {lat: results[i].geometry.location.lat(), lng: results[i].geometry.location.lng()};
+            var a = new google.maps.LatLng(userLocation);
+            var b = new google.maps.LatLng(located);
+            allDistances[i] = google.maps.geometry.spherical.computeDistanceBetween(a, b) * 0.000621371192;
+                      
+            var marker = new google.maps.Marker({
+              position: located,
+              map: map,
+              draggable: false,
+              label: {
+                color: 'white',
+                fontWeight: 'bold',
+                text: (i + 1) + ""
+              }
+            });
+
+            allMarkers.push(marker);
+            map.setCenter(allMarkers[0].position);
+
+            google.maps.event.addListener(marker, 'click', (function(marker, i) {
+              return function() {
+                infowindow.setContent("<p style='font-size:17px'><strong>" + results[i].name + "</strong>&nbsp;&nbsp;<span style='font-size:15px;color:gray'><small>" + Math.round(allDistances[i]) + " miles away</small></span></p><p>" + results[i].formatted_address + "</p>");
+                infowindow.open(map, marker);
+              }
+            })(marker, i));
+            var bounds = new google.maps.LatLngBounds();
+            for (var i = 0; i < allMarkers.length; i++) {
+              bounds.extend(allMarkers[i].getPosition());
+            }
+
+            map.fitBounds(bounds);
+            
+          }
+        }
+      }
+
+
+      function removeExistingMarkers() {
+
+        for (var i = 0; i < allMarkers.length; i ++) {
+          allMarkers[i].setMap(null);
+        }
+
+        allMarkers.length = 0;
+      }
+
+
+    </script>
+
+    <script type="text/javascript" async defer
+      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCY0XQ43qVXqZmUYVA7ONZov8Nawoc4M3U&libraries=places,geometry&callback=initMap"></script>
+    <!-- // <script src="https://maps.googleapis.com/maps/api/js?v=3&sensor=false&libraries=geometry"></script> -->
+  </body>
+</html>
